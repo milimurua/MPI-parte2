@@ -1,0 +1,51 @@
+services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  catalog:
+    build:
+      context: .
+      dockerfile: catalog/Dockerfile
+    image: marketplace/catalog:v1
+    container_name: catalog
+    ports:
+      - "8001:8000"   # REST health/products endpoint
+      - "50051:50051" # gRPC endpoint
+
+  orders:
+    build:
+      context: .
+      dockerfile: orders/Dockerfile
+    image: marketplace/orders:v1
+    container_name: orders
+    ports:
+      - "8000:8000"
+    environment:
+      CATALOG_GRPC_ADDR: catalog:50051
+      RABBIT_URL: amqp://guest:guest@rabbitmq:5672/
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      catalog:
+        condition: service_healthy  # Wait until catalog HEALTHCHECK passes
+
+  notifications:
+    build:
+      context: .
+      dockerfile: notifications/Dockerfile
+    image: marketplace/notifications:v1
+    container_name: notifications
+    environment:
+      RABBIT_URL: amqp://guest:guest@rabbitmq:5672/
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
